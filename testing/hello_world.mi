@@ -1,0 +1,24 @@
+// type is ignored for now, only const type permitted is string literal
+const GLOBAL_CONST_STR is ptr "hello, worlds!"
+const GREETINGS is ptr "Greetings, my friend!"
+const SPEECH is ptr "Hereby i declareth this to be awesome."
+
+// ptr means string
+extern fn puts i32 with ptr end
+
+fn say_speech do
+    call puts with SPEECH end
+end
+
+/*
+fn add i32 with i32 i32 do
+    call puts with GLOBAL_CONST_STR end
+end
+*/
+
+fn main do
+    call puts with GLOBAL_CONST_STR end
+    call puts with GREETINGS end
+    call say_speech end
+end
+
