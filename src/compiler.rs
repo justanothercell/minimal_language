@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::{c_uint, c_ulonglong};
-use llvm_sys::{prelude, core};
+use llvm_sys::{prelude, core, LLVMIntPredicate};
 use llvm_sys::prelude::{LLVMBool, LLVMTypeRef, LLVMValueRef};
 use crate::{c_str, c_str_ptr};
 use crate::source::{ParseError, ParseET, Span};
@@ -76,9 +76,9 @@ pub(crate) fn compile(mut tokens: TokIter, name: &str) -> Result<prelude::LLVMMo
     Ok(module)
 }
 
-fn get_var(name: &str, varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>, local_varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>) -> Result<(LLVMTypeRef, LLVMValueRef), ParseError>{
+fn get_var(name: &str, loc: Span, varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>, local_varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>) -> Result<(LLVMTypeRef, LLVMValueRef), ParseError>{
     local_varmap.get(name).map(|t|Ok(t.clone()))
-        .unwrap_or_else(||varmap.get(name).map(|t|t.clone()).ok_or(ParseET::VariableError(name.to_string()).error()))
+        .unwrap_or_else(||varmap.get(name).map(|t|t.clone()).ok_or(ParseET::VariableError(name.to_string()).at(loc)))
 }
 
 fn compile_global_const(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builder: &prelude::LLVMBuilderRef, varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>) -> Result<(), ParseError>{
@@ -214,22 +214,24 @@ fn compile_fn(tokens: &mut TokIter, module: &prelude::LLVMModuleRef,
 
     unsafe {
         while tokens.this()?.tt != TokenType::Ident(String::from("end")){
-            compile_statement(tokens, module, &builder, varmap, &mut local_varmap)?;
+            compile_statement(tokens, module, &builder, &function, varmap, &mut local_varmap)?;
         }
         if let None = ty {
             core::LLVMBuildRetVoid(builder);
         }
+        core::LLVMDisposeBuilder(builder);
     }
     expect_ident!(tokens, "end");
     Ok(())
 }
 
-fn compile_statement(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builder: &prelude::LLVMBuilderRef,
+fn compile_statement(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builder: &prelude::LLVMBuilderRef, function: &LLVMValueRef,
                      varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>,
                      local_varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>) -> Result<(), ParseError> {
     match ident_next!(tokens, "[let|<expr>]").as_str() {
         "let" => compile_let_assign(tokens, module, builder, varmap, local_varmap)?,
         "return" => compile_return(tokens, module, builder, varmap, local_varmap)?,
+        "if" => compile_if(tokens, module, builder, function, varmap, local_varmap)?,
         _ => {
             tokens.index -= 1;
             compile_expression(tokens, module, builder, varmap, local_varmap, "")?;
@@ -245,7 +247,7 @@ fn compile_expression(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, bui
     let r = match ident_next!(tokens, "[call|literal|<variable>]").as_str() {
         "call" => compile_fn_call(tokens, module, builder, varmap, local_varmap, ret_name)?,
         "literal" => compile_literal(tokens, module, builder, varmap, local_varmap)?,
-        v => get_var(v, varmap, local_varmap)?.1
+        v => get_var(v, tokens.this()?.loc, varmap, local_varmap)?.1
     };
     Ok(r)
 }
@@ -261,6 +263,54 @@ fn compile_return(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builder
             tokens.index -= 1;
             core::LLVMBuildRet(*builder, compile_expression(tokens, module, builder, varmap, local_varmap, "")?);
         }
+    }
+    Ok(())
+}
+
+fn compile_if(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builder: &prelude::LLVMBuilderRef, function: &LLVMValueRef,
+              varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>,
+              local_varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>) -> Result<(), ParseError> {
+    let cond_val = compile_expression(tokens, module, builder, varmap, local_varmap, "")?;
+    expect_ident!(tokens, "do");
+    let then_block = unsafe { core::LLVMAppendBasicBlock(*function, c_str_ptr!("then")) };
+    let else_block = unsafe { core::LLVMAppendBasicBlock(*function, c_str_ptr!("else")) };
+    let continue_block = unsafe { core::LLVMAppendBasicBlock(*function, c_str_ptr!("ifcont")) };
+    unsafe {
+        core::LLVMBuildCondBr(*builder, cond_val, then_block, else_block); // IF CONDITION CALL
+        core::LLVMPositionBuilderAtEnd(*builder, then_block); // START THEN CLAUSE
+    };
+    let mut then_local_varmap = local_varmap.clone();
+    while {
+        let n = ident_next!(tokens, "[end|else|elif]");
+        tokens.index -= 1;
+        !(n == "end" || n == "else" || n == "elif")
+    }{
+        compile_statement(tokens, module, builder, function, varmap, &mut then_local_varmap)?;
+    }
+    let continuator = ident_next!(tokens, "[end|else|elif]");
+    unsafe {
+        core::LLVMBuildBr(*builder, continue_block); // END THEN CLAUSE
+        core::LLVMPositionBuilderAtEnd(*builder, else_block); // START ELSE CLAUSE
+    }
+    let mut else_local_varmap = local_varmap.clone();
+    if continuator != "end" {
+        if continuator == "elif" {
+            compile_if(tokens, module, builder, function, varmap, &mut else_local_varmap)?;
+            tokens.index -= 1;
+        } else {
+            while {
+                let n = ident_next!(tokens, "end");
+                tokens.index -= 1;
+                &n != "end"
+            } {
+                compile_statement(tokens, module, builder, function, varmap, &mut else_local_varmap)?;
+            }
+        }
+    }
+    expect_ident!(tokens, "end");
+    unsafe {
+        core::LLVMBuildBr(*builder, continue_block); // END ELSE CLAUSE
+        core::LLVMPositionBuilderAtEnd(*builder, continue_block);
     }
     Ok(())
 }
@@ -284,17 +334,28 @@ fn compile_fn_call(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builde
         } {}
     }
     let r = if let TokenType::Particle(p, _) = name{
+        let mut op = p.to_string();
+        while let TokenType::Particle(p, true) = tokens.this()?.tt{
+            op.push(p);
+            tokens.next()
+        }
         let b = args.pop().unwrap();
         let a = args.pop().unwrap();
         unsafe {
-            println!("BUILT {p}");
-            match p {
-                '+' => core::LLVMBuildAdd(*builder, a, b, c_str_ptr!(ret_name)),
-                '-' => core::LLVMBuildSub(*builder, a, b, c_str_ptr!(ret_name)),
-                '*' => core::LLVMBuildMul(*builder, a, b, c_str_ptr!(ret_name)),
-                '/' => core::LLVMBuildSDiv(*builder, a, b, c_str_ptr!(ret_name)),
-                '&' => core::LLVMBuildAnd(*builder, a, b, c_str_ptr!(ret_name)),
-                '|' => core::LLVMBuildOr(*builder, a, b, c_str_ptr!(ret_name)),
+            match op.as_str() {
+                "+" => core::LLVMBuildAdd(*builder, a, b, c_str_ptr!(ret_name)),
+                "-" => core::LLVMBuildSub(*builder, a, b, c_str_ptr!(ret_name)),
+                "*" => core::LLVMBuildMul(*builder, a, b, c_str_ptr!(ret_name)),
+                "/" => core::LLVMBuildSDiv(*builder, a, b, c_str_ptr!(ret_name)),
+                "&" => core::LLVMBuildAnd(*builder, a, b, c_str_ptr!(ret_name)),
+                "|" => core::LLVMBuildOr(*builder, a, b, c_str_ptr!(ret_name)),
+
+                ">" => core::LLVMBuildICmp(*builder, LLVMIntPredicate::LLVMIntSGT, a, b, c_str_ptr!(ret_name)),
+                ">=" => core::LLVMBuildICmp(*builder, LLVMIntPredicate::LLVMIntSGE, a, b, c_str_ptr!(ret_name)),
+                "<" => core::LLVMBuildICmp(*builder, LLVMIntPredicate::LLVMIntSLT, a, b, c_str_ptr!(ret_name)),
+                "<=" => core::LLVMBuildICmp(*builder, LLVMIntPredicate::LLVMIntSLE, a, b, c_str_ptr!(ret_name)),
+                "==" => core::LLVMBuildICmp(*builder, LLVMIntPredicate::LLVMIntEQ, a, b, c_str_ptr!(ret_name)),
+                "!=" => core::LLVMBuildICmp(*builder, LLVMIntPredicate::LLVMIntNE, a, b, c_str_ptr!(ret_name)),
                 c => unreachable!("unknown literal func {c}")
             }
         }

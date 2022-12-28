@@ -1,5 +1,16 @@
 #include lib/std
 
 fn main do
-    call puts with literal ptr "hello, worlds!" end
+    let i32 l be call print_int with
+        call * with literal i32 100 literal i32 5 end
+    end
+
+    if call < with l literal i32 4 end do
+        call puts with literal ptr "has one, two or three digits" end
+    elif call < with l literal i32 7 end do
+        call puts with literal ptr "has four, five or six digits" end
+    else
+        call puts with literal ptr "has more than six digits" end
+    end
+    call puts with literal ptr "that was an if-else, thank you very much" end
 end
