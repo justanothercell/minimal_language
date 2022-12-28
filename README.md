@@ -52,10 +52,20 @@ fn print_int i32 with i32 num do
     return len
 end
 
-let i32 a be literal i32 42
-let i32 b be literal i32 69
-let i32 r be call + with a b end
-
-let i32 len_of_printed be call print_int with r end
-call print_int with call + with len_of_printed literal i32 100 end end
+fn main do
+    let i32 a be literal i32 42
+    let i32 b be literal i32 69
+    let i32 r be call + with a b end
+    
+    let i32 len_of_printed be call print_int with r end
+    call print_int with call + with len_of_printed literal i32 100 end end
+end
 ```
+prints:
+```
+42
+69
+111
+103
+```
+
