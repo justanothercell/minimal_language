@@ -1,0 +1,8 @@
+extern fn puts i32 with ptr str end
+extern fn printf i32 with vararg ptr str end
+
+fn print_int i32 with i32 num do
+    let i32 len be call printf with literal ptr "%d" num end
+    call puts with literal ptr "" end
+    return len
+end

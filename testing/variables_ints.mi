@@ -1,0 +1,31 @@
+// type is ignored for now, only const type permitted is string literal
+const ptr EMPTY_STR is ""
+const ptr GLOBAL_CONST_STR is "hello, worlds!"
+// ptr means string
+extern fn puts i32 with ptr str end
+extern fn printf i32 with vararg ptr str end
+
+const INT_TO_STR_FMT ptr "%d" end
+fn print_int i32 with i32 num do
+    let i32 len be call printf with INT_TO_STR_FMT num end
+    call puts with EMPTY_STR end
+    return len
+end
+
+fn main do
+    let i32 a be literal i32 42
+    let i32 b be literal i32 69
+    let i32 r be call + with a b end
+
+    call print_int with a end
+    call print_int with b end
+    let i32 r_111 be call print_int with r end
+
+    call print_int with r_111 end
+    call print_int with call + with r_111 literal i32 100 end end
+
+    let i32 puts_r be call puts with GLOBAL_CONST_STR end
+
+    call print_int with puts_r end
+end
+

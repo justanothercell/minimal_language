@@ -23,10 +23,37 @@ impl Source {
         Ok(Self {
             st: SourceType::File(path.clone()),
             source: {
-                let mut f = File::open(path)?;
+                let mut f = File::open(path.clone())?;
                 let mut buffer = String::new();
                 f.read_to_string(&mut buffer)?;
-                buffer
+                fn include(path: String, mut file: String) -> String{
+                    let dir = if let Some((p, n)) = path.rsplit_once("/") {
+                        p
+                    } else {
+                        "."
+                    };
+                    let mut includes = vec![];
+                    for line in file.lines() {
+                        if line.starts_with("#include ") {
+                            includes.push(line.split_at(9).1.to_string())
+                        }
+                    }
+                    for incl in includes {
+                        let (path, name) = if let Some((p, n)) = incl.rsplit_once("/") {
+                            (p.to_string(), n.to_string())
+                        } else {
+                            (".".to_string(), incl.clone())
+                        };
+                        let include_file = format!("{}/{}/{}.mi", dir, path, name);
+                        let mut f = File::open(include_file.clone()).expect(&format!("error including file: {include_file}"));
+                        let mut buffer = String::new();
+                        f.read_to_string(&mut buffer).unwrap();
+                        buffer = include(include_file, buffer);
+                        file = file.replace(&format!("#include {}", incl), &buffer)
+                    }
+                    file
+                }
+                include(path, buffer)
             }
         })
     }
@@ -231,6 +258,7 @@ pub(crate) enum ParseET {
     TokenizationError(String),
     ParseError(String, String),
     ParseLiteralError(Literal, String),
+    VariableError(String),
 }
 
 impl ParseET {
@@ -266,6 +294,7 @@ impl Display for ParseError {
                        Literal::Number(NumLit::Float(_), _) => "Float",
                        Literal::Bool(_) => "Float",
                    }, e),
+                   ParseET::VariableError(e) => format!("cant find variable:\n    {e}"),
                },
                if self.context.len() > 0 {
                    format!("\n    while {}", self.context.join("\n    while "))

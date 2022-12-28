@@ -1,1 +1,0 @@
-const GLOBAL_CONST_STR ptr "hello, worlds!" const GREETINGS ptr "Greetings, my friend!" const SPEECH ptr "Hereby i declareth this to be awesome." extern fn puts i32 with ptr end fn say_speech do call puts with SPEECH end end fn main do call puts with GLOBAL_CONST_STR end call puts with GREETINGS end call say_speech end end

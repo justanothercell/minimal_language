@@ -34,12 +34,12 @@ macro_rules! c_str_ptr {
 }
 
 fn main() {
-    match compile_full("testing/hello_world") {
+    match compile_full("testing/conditionals") {
         Ok(_) => (),
         Err(e) => panic!("{}\n{:?}", e, e)
     }
     println!();
-    let code = Command::new("testing/hello_world.exe")
+    let code = Command::new("testing/conditionals.exe")
         .spawn().unwrap().wait().unwrap();
     println!("executed with {code}");
 }
@@ -57,7 +57,7 @@ fn compile_full(src: &str) -> Result<(), ParseError>{
     println!();
     unsafe { core::LLVMDisposeModule(module) }
     let code = Command::new("C:/LLVM/llvm-project/build/Release/bin/clang.exe")
-        .args([bitcode_file, "-o".to_string(), src.to_string() + ".exe"])
+        .args([bitcode_file, "-v".to_string(), "-o".to_string(), src.to_string() + ".exe"])
         .spawn().unwrap().wait().unwrap();
     println!("compiled to binary with {code}");
     Ok(())
