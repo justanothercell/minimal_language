@@ -1,0 +1,27 @@
+#include lib/std
+
+fn fibonacci i32 with i32 i do
+    if call <= with i literal i32 2 end do
+        return literal i32 1
+    else
+        return call + with
+            call fibonacci with call - with i literal i32 1 end end
+            call fibonacci with call - with i literal i32 2 end end
+        end
+    end
+end
+
+fn main do
+    call print_int with call fibonacci with literal i32 1 end end
+    call print_int with call fibonacci with literal i32 2 end end
+    call print_int with call fibonacci with literal i32 3 end end
+    call print_int with call fibonacci with literal i32 4 end end
+    call print_int with call fibonacci with literal i32 5 end end
+    call print_int with call fibonacci with literal i32 6 end end
+    call print_int with call fibonacci with literal i32 7 end end
+    call print_int with call fibonacci with literal i32 8 end end
+    call print_int with call fibonacci with literal i32 9 end end
+    call print_int with call fibonacci with literal i32 10 end end
+    call print_int with call fibonacci with literal i32 11 end end
+    call print_int with call fibonacci with literal i32 12 end end
+end

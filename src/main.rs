@@ -34,12 +34,12 @@ macro_rules! c_str_ptr {
 }
 
 fn main() {
-    match compile_full("testing/is_prime") {
+    match compile_full("testing/fibonacci") {
         Ok(_) => (),
         Err(e) => panic!("{}\n{:?}", e, e)
     }
     println!();
-    let code = Command::new("testing/is_prime.exe")
+    let code = Command::new("testing/fibonacci.exe")
         .spawn().unwrap().wait().unwrap();
     println!("executed with {code}");
 }
@@ -56,9 +56,15 @@ fn compile_full(src: &str) -> Result<(), ParseError>{
     unsafe { core::LLVMDumpModule(module) }
     println!();
     unsafe { core::LLVMDisposeModule(module) }
-    let code = Command::new("C:/LLVM/llvm-project/build/Release/bin/clang.exe")
+    let dis_code = Command::new("C:/LLVM/llvm-project/build/Release/bin/llvm-dis.exe")
+        .args([bitcode_file.clone()])
+        .spawn().unwrap().wait().unwrap();
+    println!("disassembled .bc to .ll with {dis_code}");
+    println!();
+    let compile_code = Command::new("C:/LLVM/llvm-project/build/Release/bin/clang.exe")
         .args([bitcode_file, "-v".to_string(), "-o".to_string(), src.to_string() + ".exe"])
         .spawn().unwrap().wait().unwrap();
-    println!("compiled to binary with {code}");
+    println!();
+    println!("compiled to binary with {compile_code}");
     Ok(())
 }

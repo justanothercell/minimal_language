@@ -1,24 +1,14 @@
 #include lib/std
+#include lib/math
 
 fn is_prime bool with i32 num do
-    let i32 i be call + with
+    var i32 i is call + with
         call / with num literal i32 2 end
         literal i32 1
     end
-    call print_int with i end
-    call print_int with
-        call * with
-            call / with num i end
-            i
-        end
-    end
     while call > with i literal i32 2 end do
-        // i = i -1 //call mod with num i end
-        if call == with literal i32 0 literal i32 1 end do
-            //return literal bool false
-            call puts with literal ptr "is not a prime" end
-        else
-            call puts with literal ptr "is not a prime" end
+        update i to call - with i literal i32 1 end
+        if call == with call mod with num i end literal i32 0 end do
             return literal bool false
         end
     end
@@ -35,5 +25,5 @@ fn prime_checker with i32 num do
 end
 
 fn main do
-    call prime_checker with literal i32 331999 end
+    call prime_checker with literal i32 479001599 end
 end
