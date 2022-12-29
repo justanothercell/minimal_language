@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::{c_uint, c_ulonglong};
-use llvm_sys::{prelude, core, LLVMIntPredicate};
+use llvm_sys::{core, LLVMIntPredicate, prelude};
 use llvm_sys::prelude::{LLVMBool, LLVMTypeRef, LLVMValueRef};
 use crate::{c_str, c_str_ptr};
 use crate::source::{ParseError, ParseET, Span};
@@ -160,6 +160,7 @@ fn ty_str_to_ty(ty: &str) -> Result<prelude::LLVMTypeRef, ParseError>{
     unsafe {
         match ty {
             "void" => Ok(core::LLVMVoidType()),
+            "bool" => Ok(core::LLVMInt1Type()),
             "ptr" => Ok(core::LLVMPointerType(core::LLVMInt8Type(), 0)),
             "i8" =>  Ok(core::LLVMInt8Type()),
             "i32" =>  Ok(core::LLVMInt32Type()),
@@ -232,6 +233,7 @@ fn compile_statement(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, buil
         "let" => compile_let_assign(tokens, module, builder, varmap, local_varmap)?,
         "return" => compile_return(tokens, module, builder, varmap, local_varmap)?,
         "if" => compile_if(tokens, module, builder, function, varmap, local_varmap)?,
+        "while" => compile_while(tokens, module, builder, function, varmap, local_varmap)?,
         _ => {
             tokens.index -= 1;
             compile_expression(tokens, module, builder, varmap, local_varmap, "")?;
@@ -263,6 +265,39 @@ fn compile_return(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builder
             tokens.index -= 1;
             core::LLVMBuildRet(*builder, compile_expression(tokens, module, builder, varmap, local_varmap, "")?);
         }
+    }
+    Ok(())
+}
+
+fn compile_while(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builder: &prelude::LLVMBuilderRef, function: &LLVMValueRef,
+              varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>,
+              local_varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>) -> Result<(), ParseError> {
+    let cond_block = unsafe { core::LLVMAppendBasicBlock(*function, c_str_ptr!("cond")) };
+    let body_block = unsafe { core::LLVMAppendBasicBlock(*function, c_str_ptr!("body")) };
+    let continue_block = unsafe { core::LLVMAppendBasicBlock(*function, c_str_ptr!("whilecont")) };
+    unsafe {
+        core::LLVMBuildBr(*builder, cond_block);
+        core::LLVMPositionBuilderAtEnd(*builder, cond_block); // START COND
+    }
+    let cond_val = compile_expression(tokens, module, builder, varmap, local_varmap, "")?;
+    expect_ident!(tokens, "do");
+    unsafe {
+        core::LLVMBuildCondBr(*builder, cond_val, body_block, continue_block); // END COND
+        core::LLVMPositionBuilderAtEnd(*builder, body_block); // START BODY
+    }
+    let mut body_local_varmap = local_varmap.clone();
+    while {
+        let n = ident_next!(tokens, "end");
+        tokens.index -= 1;
+        &n != "end"
+    } {
+        compile_statement(tokens, module, builder, function, varmap, &mut body_local_varmap)?;
+    }
+    expect_ident!(tokens, "end");
+
+    unsafe {
+        core::LLVMBuildBr(*builder, cond_block); // END BODY
+        core::LLVMPositionBuilderAtEnd(*builder, continue_block); // CONTINUE
     }
     Ok(())
 }
@@ -319,8 +354,18 @@ fn compile_fn_call(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builde
                     varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>,
                     local_varmap: &mut HashMap<String, (LLVMTypeRef, LLVMValueRef)>,
                     ret_name: &str) -> Result<LLVMValueRef, ParseError> {
-    let name = tokens.this()?.tt;
-    tokens.next();
+    let name_tt = tokens.this()?.tt;
+    let name = if let TokenType::Particle(p, _) = name_tt {
+        let mut op = p.to_string();
+        tokens.next();
+        while let TokenType::Particle(p, true) = tokens.this()?.tt {
+            op.push(p);
+            tokens.next()
+        }
+        op
+    } else {
+        ident_next!(tokens, "name")
+    };
     let n = ident_next!(tokens, "[with|end]");
     let mut args = vec![];
     if &n == "with" {
@@ -333,16 +378,11 @@ fn compile_fn_call(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builde
             } else { false }
         } {}
     }
-    let r = if let TokenType::Particle(p, _) = name{
-        let mut op = p.to_string();
-        while let TokenType::Particle(p, true) = tokens.this()?.tt{
-            op.push(p);
-            tokens.next()
-        }
-        let b = args.pop().unwrap();
-        let a = args.pop().unwrap();
+    let r = if let TokenType::Particle(p, _) = name_tt{
+        let b = args.pop().expect(&format!("no arg 1 for bin op {name}"));
+        let a = args.pop().expect(&format!("no arg 2 for binary op {name}"));
         unsafe {
-            match op.as_str() {
+            match name.as_str() {
                 "+" => core::LLVMBuildAdd(*builder, a, b, c_str_ptr!(ret_name)),
                 "-" => core::LLVMBuildSub(*builder, a, b, c_str_ptr!(ret_name)),
                 "*" => core::LLVMBuildMul(*builder, a, b, c_str_ptr!(ret_name)),
@@ -359,10 +399,10 @@ fn compile_fn_call(tokens: &mut TokIter, module: &prelude::LLVMModuleRef, builde
                 c => unreachable!("unknown literal func {c}")
             }
         }
-    } else if let TokenType::Ident(name) = name{
-        let fun = varmap.get(&name).unwrap();
+    } else {
+        let fun = get_var(&name, tokens.this()?.loc, varmap, local_varmap)?;
         unsafe { core::LLVMBuildCall2(*builder, fun.0, fun.1, args.as_mut_ptr(), args.len() as c_uint, c_str_ptr!(ret_name)) }
-    } else { unreachable!() };
+    };
     Ok(r)
 }
 

@@ -34,12 +34,12 @@ macro_rules! c_str_ptr {
 }
 
 fn main() {
-    match compile_full("testing/conditionals") {
+    match compile_full("testing/is_prime") {
         Ok(_) => (),
         Err(e) => panic!("{}\n{:?}", e, e)
     }
     println!();
-    let code = Command::new("testing/conditionals.exe")
+    let code = Command::new("testing/is_prime.exe")
         .spawn().unwrap().wait().unwrap();
     println!("executed with {code}");
 }

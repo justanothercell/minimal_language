@@ -1,0 +1,9 @@
+fn mod i32 with i32 a i32 b do
+    return call - with
+            a
+            call * with
+                call / with a b end
+                b
+            end
+        end
+end

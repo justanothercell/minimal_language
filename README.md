@@ -21,7 +21,7 @@ needs to be set)
 - set the path of the source file and executable as demonstrated in [main.rs](src/main.rs)
 
 ##### code example:
-(removed `#include` to show off more code)
+(removed `#include` to show more code)
 ```haskell
 extern fn puts i32 with ptr str end
 extern fn printf i32 with vararg ptr str end
