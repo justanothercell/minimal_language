@@ -10,7 +10,7 @@ end
 ```
 
 ### How to use
-- Install LLVM 16 (other versions are probably file aswell, 
+- Install LLVM 15 (other versions are probably file aswell, 
 you will just need to adjust [cargo.toml](cargo.toml) to use the matching
 version of `llvm-sys`.<br>
 You may need to compile LLVM by hand, as the current releases for windows lack some needed
